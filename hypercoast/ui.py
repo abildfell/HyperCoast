@@ -18,6 +18,7 @@ from .neon import extract_neon
 from .aviris import extract_aviris
 from .common import extract_spectral
 from .tanager import extract_tanager
+from .wyvern import extract_wyvern
 
 
 class SpectralWidget(widgets.HBox):
@@ -214,6 +215,14 @@ class SpectralWidget(widgets.HBox):
                         ].values
                 elif self._host_map.cog_layer_dict[layer_name]["hyper"] == "TANAGER":
                     da = extract_tanager(ds, lat, lon)
+                    ylabel = "TOA Radiance"
+
+                    if "wavelength" not in self._host_map._spectral_data:
+                        self._host_map._spectral_data["wavelength"] = ds[
+                            "wavelength"
+                        ].values
+                elif self._host_map.cog_layer_dict[layer_name]["hyper"] == "WYVERN":
+                    da = extract_wyvern(ds, lat, lon)
                     ylabel = "TOA Radiance"
 
                     if "wavelength" not in self._host_map._spectral_data:

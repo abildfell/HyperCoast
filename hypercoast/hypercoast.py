@@ -58,6 +58,28 @@ from .common import (
     pca,
     show_field_data,
 )
+from .wyvern import read_wyvern, wyvern_to_image, extract_wyvern, grid_wyvern
+from .ui import SpectralWidget
+from .common import (
+    download_file,
+    search_datasets,
+    search_nasa_data,
+    download_nasa_data,
+    search_pace,
+    search_pace_chla,
+    search_emit,
+    search_ecostress,
+    download_pace,
+    download_emit,
+    download_ecostress,
+    nasa_earth_login,
+    image_cube,
+    open_dataset,
+    download_acolite,
+    run_acolite,
+    pca,
+    show_field_data,
+)
 
 
 class Map(leafmap.Map):
@@ -863,13 +885,124 @@ class Map(leafmap.Map):
         except Exception as e:
             print(e)
 
+    def add_wyvern(
+        self,
+        source,
+        bands=None,
+        wavelengths=None,
+        indexes=None,
+        colormap=None,
+        vmin=0,
+        vmax=120,
+        nodata=np.nan,
+        attribution=None,
+        layer_name="Wyvern",
+        zoom_to_layer=True,
+        visible=True,
+        method="nearest",
+        array_args=None,
+        **kwargs,
+    ):
+        """Add a Wyvern dataset to the map.
+            If you are using this function in JupyterHub on a remote server
+                (e.g., Binder, Microsoft Planetary Computer) and
+            if the raster does not render properly, try installing
+                jupyter-server-proxy using `pip install jupyter-server-proxy`,
+            then running the following code before calling this function. For
+                more info, see https://bit.ly/3JbmF93.
+
+            import os
+            os.environ['LOCALTILESERVER_CLIENT_PREFIX'] = 'proxy/{port}'
+
+        Args:
+            source (str): The path to the GeoTIFF file or the URL of the Cloud
+                Optimized GeoTIFF.
+            bands (list, optional): The band indices to select. Defaults to None.
+            wavelengths (list, optional): The wavelength values to select. Takes priority over bands. Defaults to None.
+            colormap (str, optional): The name of the colormap from `matplotlib`
+                to use when plotting a single band. See
+                    https://matplotlib.org/stable/gallery/color/colormap_reference.html.
+                    Default is greyscale.
+            vmin (float, optional): The minimum value to use when colormapping
+                the palette when plotting a single band. Defaults to None.
+            vmax (float, optional): The maximum value to use when colormapping
+                the palette when plotting a single band. Defaults to None.
+            nodata (float, optional): The value from the band to use to interpret
+                as not valid data. Defaults to None.
+            attribution (str, optional): Attribution for the source raster. This
+                defaults to a message about it being a local file.. Defaults to None.
+            layer_name (str, optional): The layer name to use. Defaults to 'EMIT'.
+            zoom_to_layer (bool, optional): Whether to zoom to the extent of the
+                layer. Defaults to True.
+            visible (bool, optional): Whether the layer is visible. Defaults to True.
+            array_args (dict, optional): Additional arguments to pass to
+                `array_to_memory_file` when reading the raster. Defaults to {}.
+        """
+
+        if array_args is None:
+            array_args = {}
+
+        if isinstance(source, str):
+
+            source = read_wyvern(source)
+
+        selected_wavelengths = []
+        if wavelengths is not None:
+            selected_wavelengths = wavelengths
+        elif bands is not None:
+            for band in bands:
+                if isinstance(band, (int, np.integer)) or (
+                    isinstance(band, float) and band < 31
+                ):
+                    # Treat as band index
+                    selected_wavelengths.append(
+                        source.coords["wavelength"].values[int(band)]
+                    )
+                else:
+                    # Treat as wavelength value
+                    selected_wavelengths.append(band)
+
+        else:
+            # TODO may need to add lookup for +/- 1nm
+            selected_wavelengths = [869, 679, 634]
+        try:
+            image = wyvern_to_image(
+                source, wavelengths=selected_wavelengths, method=method
+            )
+
+            if isinstance(selected_wavelengths, list) and len(selected_wavelengths) > 1:
+                colormap = None
+
+            self.add_raster(
+                image,
+                indexes=indexes,
+                colormap=colormap,
+                vmin=vmin,
+                vmax=vmax,
+                nodata=nodata,
+                attribution=attribution,
+                layer_name=layer_name,
+                zoom_to_layer=zoom_to_layer,
+                visible=visible,
+                array_args=array_args,
+                **kwargs,
+            )
+
+            self.cog_layer_dict[layer_name]["xds"] = source
+            self.cog_layer_dict[layer_name]["vmax"] = vmax
+            self.cog_layer_dict[layer_name]["vmin"] = vmin
+            self.cog_layer_dict[layer_name]["hyper"] = "WYVERN"
+            self._update_band_names(layer_name, selected_wavelengths)
+        except Exception as e:
+            print(e)
+
     def add_hyper(self, xds, dtype, wvl_indexes=None, **kwargs):
         """Add a hyperspectral dataset to the map.
 
         Args:
             xds (str): The Xarray dataset containing the hyperspectral data.
             dtype (str): The type of the hyperspectral dataset. Can be one of
-                "EMIT", "PACE", "DESIS", "NEON", "AVIRIS".
+                "EMIT", "PACE", "DESIS", "NEON", "AVIRIS", "WYVERN"
             **kwargs: Additional keyword arguments to pass to the corresponding
                 add function.
         """
@@ -899,6 +1032,8 @@ class Map(leafmap.Map):
             self.add_aviris(xds, **kwargs)
         elif dtype == "TANAGER":
             self.add_tanager(xds, **kwargs)
+        elif dtype == "WYVERN":
+            self.add_wyvern(xds, **kwargs)
         elif dtype == "XARRAY":
             kwargs.pop("wavelengths", None)
             self.add_dataset(xds, **kwargs)
